@@ -1,3 +1,7 @@
 .venv/
 __pychache__/
 .env
+host/
+listing/
+review/
+state/
