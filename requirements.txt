@@ -1,3 +1,4 @@
+pyspark==3.5.6
+boto3
 pandas
 numpy
-pyspark==3.5.6

@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
 
+# ーーーーーーーーーーーーーーーーーーーーー
+# pysparkはわかりにくいのでpandasでまず加工
+# ーーーーーーーーーーーーーーーーーーーーー
+
 df=pd.read_csv('./data/min_data.csv')
 
 # メタ系統の情報の削除
