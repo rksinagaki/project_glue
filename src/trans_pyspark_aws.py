@@ -1,34 +1,44 @@
 import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, to_date, regexp_replace, trim, lit, sum
-from pyspark.sql import SparkSession
 
-spark = SparkSession.builder.appName("MyPySparkApp").getOrCreate()
+## @params: [JOB_NAME]
+# パラメーター取得
+args = getResolvedOptions(sys.argv, ['JOB_NAME','INPUT_PATH','OUTPUT_PATH'])
 
-args = getResolvedOptions(sys.argv, ['JOB_NAME', 'S3_PATH'])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
 
-s3_path = args['S3_PATH']
+#環境変数呼び出し
+s3_path = args['INPUT_PATH']
+output_path = args['OUTPUT_PATH']
 
+# 加工処理
+# データの読み込み
 df = spark.read.csv(
-                    s3_path, 
-                    header=True,
-                    inferSchema=True,
-                    sep=",",
-                    quote='"',
-                    multiLine=True,
-                    escape='"')
+    s3_path,
+    header=True,
+    inferSchema=True,
+    sep=",",
+    quote='"',
+    escape='"',
+    multiLine=True
+)
 
 # 削除するカラムのリストを作成
 columns_to_drop = set()
 metadata_keywords = ['url', 'scrape', 'id', 'description', 'overview', 'about', 'name']
 for keyword in metadata_keywords:
     columns_to_drop.update([c for c in df.columns if keyword in c])
-
-# 欠損値が50%を超えるカラムを特定
-# num_rows = df.count()
-# null_counts = df.select([sum(col(c).isNull().cast("int")).alias(c) for c in df.columns]).collect()[0]
-# null_columns = [k for k in null_counts.asDict() if null_counts[k] / num_rows > 0.5]
-# columns_to_drop.update(null_columns)
 
 # 一括でカラムを削除
 df_cleansed = df.drop(*list(columns_to_drop))
@@ -45,8 +55,6 @@ state_df = df_cleansed.select(*[c for c in df_cleansed.columns if 'availability'
 # hostテーブルの処理
 host_drop_list = ['host_verifications', 'host_has_profile_pic', 'host_location']
 host_df = host_df.drop(*list(host_drop_list))
-
-#try_to_dateがないらしい------------------------------------------------------------------
 host_df = host_df.withColumn('host_since', to_date('host_since', 'yyyy-MM-dd'))
 host_df = host_df.withColumn('host_response_rate', regexp_replace(col('host_response_rate'), '%', '').cast('float') / 100)
 host_df = host_df.withColumn('host_acceptance_rate', regexp_replace(col('host_acceptance_rate'), '%', '').cast('float') / 100)
@@ -64,9 +72,9 @@ df_listing = listing_df.drop(*other_drop_list)
 df_listing = df_listing.withColumn('price', regexp_replace(regexp_replace(col('price'), '\$|', ''), ',', '').cast('float'))
 
 # 加工済みのテーブルをParquet形式で保存
-df_listing.write.mode("overwrite").parquet("./processed_data/listing")
-host_df.write.mode("overwrite").parquet("./processed_data/host")
-review_df.write.mode("overwrite").parquet("./processed_data/review")
-state_df.write.mode("overwrite").parquet("./processed_data/state")
+df_listing.write.mode("overwrite").parquet(f"{output_path}listing/")
+host_df.write.mode("overwrite").parquet(f"{output_path}host/")
+review_df.write.mode("overwrite").parquet(f"{output_path}review/")
+state_df.write.mode("overwrite").parquet(f"{output_path}state/")
 
-spark.stop()
+job.commit()
